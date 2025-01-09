@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from bson import ObjectId
 from app import mongo
+from app.services.product_service import ProductService
 from app.utils.responses import success_response
 from app.utils.validators import validate_product_data
 
@@ -8,37 +9,38 @@ product_bp = Blueprint('products', __name__)
 
 @product_bp.route('/products', methods=['GET'])
 def get_products():
-    products = mongo.db.products.find()
-    return jsonify([{"id": str(product["_id"]), "name": product["name"], "price": product["price"]} for product in products]), 200
+    product_service = ProductService(mongo.db)
+    products = product_service.get_all_products()
+    return jsonify([product.to_dict() for product in products]), 200
+
 
 @product_bp.route('/products/<id>', methods=['GET'])
 def get_product(id):
-    product = mongo.db.products.find_one({"_id": ObjectId(id)})
+    product_service = ProductService(mongo.db)
+    product = product_service.get_product_by_id(id)
+
     if not product:
         return jsonify({"error": "Product not found"}), 404
-    return jsonify({"id": str(product["_id"]), "name": product["name"], "price": product["price"]}), 200
+
+    return jsonify(product.to_dict()), 200
 
 @product_bp.route('/products', methods=['POST'])
 def create_product():
     data = request.get_json()
 
+    product_service = ProductService(mongo.db)
+
     # Validación de los datos
-    # Validar los datos
     validation_error = validate_product_data(data)
     if validation_error:
         return validation_error
 
-    product = {
-        "name": data["name"],
-        "price": data["price"]
-    }
-
-    result = mongo.db.products.insert_one(product)
+    product = product_service.create_product(data)
 
     return success_response({
-        "id": str(result.inserted_id),
-        "name": product["name"],
-        "price": product["price"]
+        "id": str(product.id),
+        "name": product.name,
+        "price": product.price
     }, message="Producto creado con éxito", status_code=201)
 
 
@@ -46,27 +48,34 @@ def create_product():
 @product_bp.route('/products/<id>', methods=['PUT'])
 def update_product(id):
     data = request.get_json()
+    product_service = ProductService(mongo.db)
 
     # Validación de los datos
     validation_error = validate_product_data(data)
     if validation_error:
         return validation_error
 
-    product = mongo.db.products.find_one({"_id": ObjectId(id)})
-    if not product:
+    # Actualizar el producto
+    updated_product = product_service.update_product(id, data)
+
+    if not updated_product:
         return jsonify({"error": "Producto no encontrado"}), 404
 
-    # Actualizar el producto
-    mongo.db.products.update_one({"_id": ObjectId(id)}, {"$set": data})
-    return jsonify({"message": "Producto actualizado con éxito"}), 200
+    return success_response({
+        "id": str(updated_product.id),
+        "name": updated_product.name,
+        "price": updated_product.price
+    }, message="Producto actualizado con éxito", status_code=200)
 
 
 @product_bp.route('/products/<id>', methods=['DELETE'])
 def delete_product(id):
-    product = mongo.db.products.find_one({"_id": ObjectId(id)})
-    if not product:
-        return jsonify({"error": "Producto no encontrado"}), 404
+    product_service = ProductService(mongo.db)
 
     # Eliminar el producto
-    mongo.db.products.delete_one({"_id": ObjectId(id)})
+    product_deleted = product_service.delete_product(id)
+
+    if not product_deleted:
+        return jsonify({"error": "Producto no encontrado"}), 404
+
     return jsonify({"message": "Producto eliminado con éxito"}), 200
