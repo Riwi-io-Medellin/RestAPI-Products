@@ -1,6 +1,8 @@
 from flask import Blueprint, request, jsonify
 from bson import ObjectId
 from app import mongo
+from app.utils.responses import success_response
+from app.utils.validators import validate_product_data
 
 product_bp = Blueprint('products', __name__)
 
@@ -21,8 +23,10 @@ def create_product():
     data = request.get_json()
 
     # Validación de los datos
-    if not data or not data.get('name') or not data.get('price'):
-        return jsonify({"error": "Nombre y precio son obligatorios"}), 400
+    # Validar los datos
+    validation_error = validate_product_data(data)
+    if validation_error:
+        return validation_error
 
     product = {
         "name": data["name"],
@@ -30,7 +34,13 @@ def create_product():
     }
 
     result = mongo.db.products.insert_one(product)
-    return jsonify({"id": str(result.inserted_id), "name": product["name"], "price": product["price"]}), 201
+
+    return success_response({
+        "id": str(result.inserted_id),
+        "name": product["name"],
+        "price": product["price"]
+    }, message="Producto creado con éxito", status_code=201)
+
 
 
 @product_bp.route('/products/<id>', methods=['PUT'])
@@ -38,8 +48,9 @@ def update_product(id):
     data = request.get_json()
 
     # Validación de los datos
-    if not data or not data.get('name') or not data.get('price'):
-        return jsonify({"error": "Nombre y precio son obligatorios"}), 400
+    validation_error = validate_product_data(data)
+    if validation_error:
+        return validation_error
 
     product = mongo.db.products.find_one({"_id": ObjectId(id)})
     if not product:
